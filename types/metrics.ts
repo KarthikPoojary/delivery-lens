@@ -30,6 +30,12 @@ export interface VelocityData {
   empty: boolean;
 }
 
+export interface ProcessMetrics {
+  reviewResponseTime: MetricValue;  // hours to first review comment
+  openBugBacklog: MetricValue;       // total open issues labeled bug
+  contributorCount: MetricValue;     // unique PR authors in 90 days
+}
+
 export interface MetricsData {
   repo: RepoInfo;
   deploymentFrequency: MetricValue;
@@ -37,6 +43,7 @@ export interface MetricsData {
   changeFailureRate: MetricValue;
   meanTimeToRestore: MetricValue;
   velocityTrend: VelocityData;
+  processMetrics: ProcessMetrics;
   overallHealth: {
     tier: Tier;
     worstMetric: string;

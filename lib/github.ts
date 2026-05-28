@@ -1,4 +1,4 @@
-import type { MetricValue, MetricsData, Tier, VelocityData, WeeklyCount } from '@/types/metrics';
+import type { MetricValue, MetricsData, ProcessMetrics, Tier, VelocityData, WeeklyCount } from '@/types/metrics';
 
 const BASE = 'https://api.github.com';
 
@@ -75,11 +75,13 @@ interface GHRelease {
 }
 
 interface GHSearchItem {
+  number: number;
   title: string;
   created_at: string;
   closed_at: string | null;
   pull_request?: { merged_at: string | null };
   merged_at?: string | null;
+  user?: { login: string };
 }
 
 async function fetchRepoInfo(owner: string, name: string) {
@@ -342,17 +344,71 @@ function computeOverallHealth(
   return { tier, worstMetric: worst.name };
 }
 
+// ── Process Health Metrics ──────────────────────────────────────────────────
+
+async function fetchReviewResponseTime(owner: string, name: string, prs: GHSearchItem[]): Promise<MetricValue> {
+  // Sample the first 20 merged PRs and fetch their first review comment time
+  const sample = prs.filter(p => p.pull_request?.merged_at).slice(0, 20);
+  if (sample.length === 0) return { value: 0, formatted: 'N/A', tier: 'Low', sparkline: [], empty: true };
+
+  const reviewTimes = await Promise.all(
+    sample.map(async pr => {
+      const res = await ghFetch(`/repos/${owner}/${name}/issues/${pr.number}/timeline?per_page=100`);
+      if (!res.ok) return null;
+      const events: Array<{ event: string; created_at?: string }> = await res.json();
+      const firstReview = events.find(e =>
+        e.event === 'reviewed' || e.event === 'commented' || e.event === 'review_requested'
+      );
+      if (!firstReview?.created_at) return null;
+      return (new Date(firstReview.created_at).getTime() - new Date(pr.created_at).getTime()) / 3600000;
+    })
+  );
+
+  const valid = reviewTimes.filter((h): h is number => h !== null && h > 0);
+  if (valid.length === 0) return { value: 0, formatted: 'N/A', tier: 'Low', sparkline: [], empty: true };
+
+  const sorted = [...valid].sort((a, b) => a - b);
+  const med = sorted[Math.floor(sorted.length / 2)];
+  // Elite <4h, High <24h, Medium <72h, Low >=72h
+  const tier = tierLower(med, 4, 24, 72);
+  const formatted = med < 24 ? `${Math.round(med)}h` : `${(med / 24).toFixed(1)}d`;
+
+  return { value: Math.round(med), formatted, tier, sparkline: [], empty: false };
+}
+
+async function fetchOpenBugBacklog(owner: string, name: string): Promise<MetricValue> {
+  const res = await ghFetch(`/search/issues?q=repo:${owner}/${name}+type:issue+label:bug+is:open&per_page=1`);
+  if (!res.ok) return { value: 0, formatted: '0', tier: 'Elite', sparkline: [], empty: true };
+  const data = await res.json();
+  const count: number = data.total_count ?? 0;
+
+  // Lower is better. Elite <10, High <50, Medium <200, Low >=200
+  const tier = tierLower(count, 10, 50, 200);
+  return { value: count, formatted: String(count), tier, sparkline: [], empty: count === 0 };
+}
+
+function computeContributorCount(prs: GHSearchItem[]): MetricValue {
+  const authors = new Set(prs.map(p => (p as unknown as { user?: { login: string } }).user?.login).filter(Boolean));
+  const count = authors.size;
+  // Elite >=20 unique contributors in 90d, High >=10, Medium >=5, Low <5
+  const tier = tierHigher(count, 20, 10, 5);
+  return { value: count, formatted: String(count), tier, sparkline: [], empty: count === 0 };
+}
+
+// ── Main Orchestrator ───────────────────────────────────────────────────────
+
 export async function fetchAllMetrics(
   owner: string,
   name: string,
 ): Promise<MetricsData> {
-  const [repoInfo, releases, mergedPRs, bugIssues, cfrCounts, velocityCounts] = await Promise.all([
+  const [repoInfo, releases, mergedPRs, bugIssues, cfrCounts, velocityCounts, openBugBacklog] = await Promise.all([
     fetchRepoInfo(owner, name),
     fetchReleases(owner, name),
     fetchMergedPRs(owner, name),
     fetchBugIssues(owner, name),
     fetchCFRCounts(owner, name),
     fetchVelocityCounts(owner, name),
+    fetchOpenBugBacklog(owner, name),
   ]);
 
   let tagCount = 0;
@@ -365,6 +421,15 @@ export async function fetchAllMetrics(
   const changeFailureRate = computeChangeFailureRate(cfrCounts[0], cfrCounts[1]);
   const meanTimeToRestore = computeMTTR(bugIssues);
   const velocityTrend = computeVelocity(mergedPRs, velocityCounts[0], velocityCounts[1]);
+  const reviewResponseTime = await fetchReviewResponseTime(owner, name, mergedPRs);
+  const contributorCount = computeContributorCount(mergedPRs);
+
+  const processMetrics: ProcessMetrics = {
+    reviewResponseTime,
+    openBugBacklog,
+    contributorCount,
+  };
+
   const overallHealth = computeOverallHealth(
     deploymentFrequency,
     leadTime,
@@ -380,6 +445,7 @@ export async function fetchAllMetrics(
     changeFailureRate,
     meanTimeToRestore,
     velocityTrend,
+    processMetrics,
     overallHealth,
   };
 }

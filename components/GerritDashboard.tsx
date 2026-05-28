@@ -1,28 +1,28 @@
-import { fetchAllMetrics } from '@/lib/github';
+import { fetchAllGerritMetrics } from '@/lib/gerrit';
 import MetricCard from './MetricCard';
 import HealthScore from './HealthScore';
 import VelocityChart from './VelocityChart';
 
 const DORA_TOOLTIPS = {
   deploymentFrequency:
-    'How often this team ships to production. Elite teams deploy multiple times per week. Low frequency means longer feedback loops and higher risk per release.\n\nDORA Elite benchmark: on-demand (multiple deploys/day). This tool uses release/tag count as a proxy.',
+    'How often this project ships tagged releases. Elite teams release on-demand, multiple times per week.\n\nDORA Elite benchmark: on-demand (multiple deploys/day). Computed from git tags on the repository over the last 90 days.',
   leadTime:
-    'Median time from PR creation to merge. Proxy for how quickly code moves through review and CI. High lead time points to bottlenecks — large PRs, slow reviewers, flaky tests, or understaffed teams.\n\nDORA Elite benchmark: less than 1 hour. This tool uses a practical threshold of <24h for open-source repos.',
+    'Median time from CL creation to merge. A proxy for how quickly code moves through review and CI on Gerrit.\n\nDORA Elite benchmark: less than 1 hour. A practical threshold of <24h is used here for large open-source projects.',
   changeFailureRate:
-    'Percentage of merged PRs with "revert", "hotfix", or "rollback" in the title. A proxy for deployment quality. High CFR suggests gaps in testing, review, or release processes.\n\nDORA Elite benchmark: 0–15% of deployments cause a failure.',
+    'Percentage of merged CLs whose subject starts with "Revert". Gerrit convention for reverting bad changes.\n\nDORA Elite benchmark: 0–15% of changes cause a failure.',
   meanTimeToRestore:
-    'Median time from a bug issue being opened to closed (issues created in the last 90 days). Reflects how quickly the team detects and resolves production incidents.\n\nDORA Elite benchmark: less than 1 hour. This tool uses GitHub issues labeled "bug" as a proxy for incidents.',
+    'N/A for Gerrit source — Gerrit does not track incident or bug records. Use a companion bug tracker (Buganizer, Monorail) for MTTR.',
   velocityTrend:
-    'Are we shipping more or less than before? Compares merged PRs per week in the last 4 weeks vs the prior 8 weeks. Declining velocity may indicate growing tech debt, onboarding friction, or scope creep.',
+    'Are we shipping more CLs than before? Compares merged CLs/week in the last 4 weeks vs the prior 8 weeks. Declining velocity may indicate growing review bottlenecks or scope creep.',
 };
 
 const PROCESS_TOOLTIPS = {
   reviewResponseTime:
-    'Median time from PR creation to the first review comment or review event, sampled from the 20 most recent merged PRs. Slow response time means engineers are blocked waiting for review — a leading cause of high Lead Time.\n\nGoogle internal norm: same-day review response for most CLs.',
+    'N/A for Gerrit source — detailed reviewer timeline data is not exposed in public Gerrit REST APIs without authentication.',
   openBugBacklog:
-    'Total open issues currently labeled "bug". A growing backlog signals that defects are accumulating faster than the team can address them — a compounding tax on future velocity.\n\nWatch the trend: steady or shrinking is healthy; rapidly growing is a risk.',
+    'N/A for Gerrit source — bug tracking is handled by external systems (Monorail, Buganizer, GitHub Issues).',
   contributorCount:
-    'Number of unique PR authors who merged code in the last 90 days. A proxy for team bus factor and knowledge distribution. Very low contributor count means the codebase depends on a few individuals.',
+    'Number of unique CL authors who merged code in the last 90 days. A proxy for team bus factor and knowledge distribution across the project.',
 };
 
 function ErrorState({ message }: { message: string }) {
@@ -34,17 +34,16 @@ function ErrorState({ message }: { message: string }) {
   );
 }
 
-export default async function MetricsDashboard({ repo }: { repo: string }) {
-  const parts = repo.split('/');
-  if (parts.length !== 2 || !parts[0] || !parts[1]) {
-    return <ErrorState message={`Invalid repository format: "${repo}". Use owner/repo.`} />;
-  }
-
-  const [owner, name] = parts;
-
+export default async function GerritDashboard({
+  instance,
+  project,
+}: {
+  instance: string;
+  project: string;
+}) {
   let metrics;
   try {
-    metrics = await fetchAllMetrics(owner, name);
+    metrics = await fetchAllGerritMetrics(instance, project);
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Unexpected error';
     return <ErrorState message={message} />;
@@ -63,12 +62,13 @@ export default async function MetricsDashboard({ repo }: { repo: string }) {
             rel="noopener noreferrer"
             className="text-xs text-neutral-500 hover:text-neutral-400 transition-colors"
           >
-            github.com/{metrics.repo.owner}/{metrics.repo.name}
+            {instance}/{project}
           </a>
         </div>
         {metrics.repo.description && (
           <p className="text-sm text-neutral-500">{metrics.repo.description}</p>
         )}
+        <p className="text-xs text-neutral-600">Source: Gerrit · {instance}</p>
       </div>
 
       <HealthScore
@@ -89,19 +89,19 @@ export default async function MetricsDashboard({ repo }: { repo: string }) {
           />
           <MetricCard
             name="Lead Time for Changes"
-            subtitle="Median PR create → merge"
+            subtitle="Median CL create → merge"
             metric={metrics.leadTime}
             tooltip={DORA_TOOLTIPS.leadTime}
           />
           <MetricCard
             name="Change Failure Rate"
-            subtitle="Reverts + hotfixes / total PRs"
+            subtitle="Reverts / total CLs"
             metric={metrics.changeFailureRate}
             tooltip={DORA_TOOLTIPS.changeFailureRate}
           />
           <MetricCard
             name="Mean Time to Restore"
-            subtitle="Median bug issue open → close"
+            subtitle="N/A for Gerrit source"
             metric={metrics.meanTimeToRestore}
             tooltip={DORA_TOOLTIPS.meanTimeToRestore}
           />
@@ -139,19 +139,19 @@ export default async function MetricsDashboard({ repo }: { repo: string }) {
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
           <MetricCard
             name="Review Response Time"
-            subtitle="Median hours to first review"
+            subtitle="N/A for Gerrit source"
             metric={metrics.processMetrics.reviewResponseTime}
             tooltip={PROCESS_TOOLTIPS.reviewResponseTime}
           />
           <MetricCard
             name="Open Bug Backlog"
-            subtitle="Total open issues labeled bug"
+            subtitle="N/A for Gerrit source"
             metric={metrics.processMetrics.openBugBacklog}
             tooltip={PROCESS_TOOLTIPS.openBugBacklog}
           />
           <MetricCard
             name="Active Contributors"
-            subtitle="Unique PR authors / 90 days"
+            subtitle="Unique CL authors / 90 days"
             metric={metrics.processMetrics.contributorCount}
             tooltip={PROCESS_TOOLTIPS.contributorCount}
           />
@@ -159,7 +159,7 @@ export default async function MetricsDashboard({ repo }: { repo: string }) {
       </section>
 
       <p className="text-[11px] text-neutral-700 text-right">
-        Data from GitHub REST API. 90-day window. Cached 1 hour.
+        Data from Gerrit REST API. 90-day window. Cached 1 hour.
       </p>
     </div>
   );

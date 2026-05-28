@@ -4,9 +4,9 @@ import { useRouter } from 'next/navigation';
 import { useState } from 'react';
 
 const PRESETS = [
-  { repo: 'vercel/next.js' },
-  { repo: 'supabase/supabase' },
-  { repo: 'kubernetes/kubernetes' },
+  { repo: 'kubernetes/kubernetes', label: 'kubernetes/kubernetes', note: 'GKE · Container Orchestration' },
+  { repo: 'grpc/grpc', label: 'grpc/grpc', note: 'gRPC · All GCP APIs' },
+  { repo: 'istio/istio', label: 'istio/istio', note: 'Anthos · Service Mesh' },
 ];
 
 export default function RepoPicker({ currentRepo }: { currentRepo: string }) {
@@ -32,19 +32,20 @@ export default function RepoPicker({ currentRepo }: { currentRepo: string }) {
   return (
     <div className="space-y-3">
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-        {PRESETS.map(({ repo }) => {
+        {PRESETS.map(({ repo, label, note }) => {
           const active = currentRepo === repo;
           return (
             <button
               key={repo}
               onClick={() => select(repo)}
-              className={`px-4 py-3 rounded-lg border text-sm font-mono text-left transition-colors ${
+              className={`px-4 py-3 rounded-lg border text-left transition-colors ${
                 active
-                  ? 'border-indigo-500 bg-indigo-950/60 text-indigo-300'
-                  : 'border-neutral-700 bg-neutral-900 text-neutral-300 hover:border-neutral-500 hover:bg-neutral-800'
+                  ? 'border-indigo-500 bg-indigo-950/60'
+                  : 'border-neutral-700 bg-neutral-900 hover:border-neutral-500 hover:bg-neutral-800'
               }`}
             >
-              {repo}
+              <p className={`text-sm font-mono ${active ? 'text-indigo-300' : 'text-neutral-300'}`}>{label}</p>
+              <p className="text-[11px] text-neutral-600 mt-0.5">{note}</p>
             </button>
           );
         })}
