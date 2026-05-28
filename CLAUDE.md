@@ -5,10 +5,13 @@
 A single-page TPM tool that shows DORA-aligned engineering health metrics for any public GitHub repository.
 
 ## Current status
-- **Works:** Full project scaffold complete. All source files written.
-- **Not yet verified:** App has not been started and tested in browser. TypeScript compilation not checked.
-- **Partially built:** README.md not yet written (placeholder from scaffold).
-- **Last worked on:** Initial scaffold + all source files written (2026-05-27).
+- **Works:** App running at http://localhost:3000. All 5 metrics live and verified against real GitHub data. TypeScript clean. README written. GitHub repo live.
+- **Verified metric values (as of 2026-05-27):**
+  - vercel/next.js → Deploy Elite, Lead Time Elite, CFR Elite, MTTR N/A (no "bug" label), Velocity Low (-30%)
+  - supabase/supabase → Deploy Medium, Lead Time Elite, CFR Elite, MTTR ~1.1d High, Velocity Elite (+12%)
+  - kubernetes/kubernetes → Deploy High, Lead Time High, CFR Elite, MTTR N/A (uses kind/bug), Velocity Elite (+12%)
+- **Partially built:** README has placeholder for screenshot (needs deployment first).
+- **Last worked on:** Metric accuracy fixes + README + file cleanup (2026-05-27).
 
 ## Tech stack
 - Next.js 16.2.6 (App Router, TypeScript)
@@ -62,21 +65,16 @@ app/globals.css              — Tailwind v4 CSS + theme variables
 Set in `.env.local` locally. Set in Vercel dashboard for production. No special scopes needed for public repos.
 
 ## Open questions / parked items
-- **README.md** not yet written — needs pitch, why-it-exists, screenshot, live demo URL, metrics explained, tech stack, local dev, design decisions, roadmap.
-- **TypeScript strict check** — `tsc --noEmit` not yet run. Do before deploying.
-- **Velocity tier thresholds** — custom values (+10%=Elite, -5%=High, -20%=Medium). Not from official DORA research. Flag in README.
-- **Tag fallback date filtering** — tags endpoint has no date filter; deployment freq via tags is approximate. Consider noting in UI.
-- **kubernetes/kubernetes scale** — Search API returns max 100 items; metrics computed from a sample for very active repos.
+- **MTTR N/A for two repos** — vercel/next.js and kubernetes/kubernetes don't use a "bug" GitHub label (k8s uses `kind/bug`). MTTR shows "No data" for them. Honest, but could add multi-label support later.
+- **Lead Time is a sample** — computed from 100 most-recently-merged PRs, not all PRs. For repos with 1000+ PRs/90d this is a representative sample, not exact median. Acceptable for v1.
+- **Velocity chart sparkline vs exact counts** — sparkline uses sampled PRs (indicative shape), while 4w/8w comparison uses exact API counts. Slight inconsistency; fine for v1.
 - **LinkedIn URL** — hardcoded as `linkedin.com/in/karthikpoojary` in footer. Verify before deploying.
+- **Screenshot in README** — placeholder until deployment is done.
 
 ## Next steps
-1. `npm run dev` — verify app renders and all three preset repos load correctly
-2. Add `GITHUB_TOKEN` to `.env.local`
-3. Run `npx tsc --noEmit` — fix any type errors
-4. Write `README.md` per the spec
-5. Push to github.com/KarthikPoojary/delivery-lens
-6. Deploy to Vercel, set `GITHUB_TOKEN` in dashboard
-7. Add screenshot to README after deployment
+1. Deploy to Vercel — set `GITHUB_TOKEN` env var in dashboard
+2. Add screenshot to README after deployment and push
+3. Verify LinkedIn URL in footer is correct
 
 ## Session log
 
@@ -87,6 +85,11 @@ Set in `.env.local` locally. Set in Vercel dashboard for production. No special 
 - Created `types/metrics.ts`, `lib/github.ts` (full GitHub API client + metric computations)
 - Created all components: RepoPicker, MetricCard, MetricTooltip, SkeletonCard, HealthScore, VelocityChart, MetricsDashboard
 - Rewrote `app/page.tsx`, updated `app/layout.tsx` metadata
-- Created `.env.local.example`
-- Decided: no API route; lib called directly from async Server Component
-- Decided: Suspense `key={repo}` pattern for re-suspension on repo change
+- Created GitHub repo (KarthikPoojary/delivery-lens), pushed all code
+- Wrote full README with DORA framing, TPM context, metric explanations, design decisions
+- Removed scaffold leftovers (5 SVGs, AGENTS.md)
+- Fixed 3 metric accuracy bugs found during live data verification:
+  - MTTR: changed to `created:>date` query to avoid ancient bug resolutions inflating median
+  - CFR: split into 3 separate keyword searches (was treating revert+hotfix+rollback as AND)
+  - Velocity: replaced `merged:<date` range with two cumulative counts + subtraction (URL encoding bug)
+- Verified live metric values against GitHub API for all 3 preset repos
