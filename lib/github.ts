@@ -113,16 +113,61 @@ async function fetchTagCount(owner: string, name: string): Promise<number> {
 
 async function fetchMergedPRs(owner: string, name: string): Promise<GHSearchItem[]> {
   const date = since(90);
-  const url = `/search/issues?q=repo:${owner}/${name}+type:pr+is:merged+merged:>${date}&per_page=100&sort=updated&order=desc`;
+  const url = `/search/issues?q=repo:${owner}/${name}+type:pr+is:merged+merged:>${date}&per_page=100&sort=merged&order=desc`;
   const res = await ghFetch(url);
   if (!res.ok) return [];
   const data = await res.json();
   return (data.items ?? []) as GHSearchItem[];
 }
 
-async function fetchBugIssues(owner: string, name: string): Promise<GHSearchItem[]> {
+// Returns [totalMergedCount, failureCount] using exact search counts — avoids
+// sampling bias when a repo has thousands of PRs in 90 days.
+// Three separate keyword searches because GitHub Search uses AND logic between terms;
+// combining them would require ALL three words in a title.
+async function fetchCFRCounts(owner: string, name: string): Promise<[number, number]> {
   const date = since(90);
-  const url = `/search/issues?q=repo:${owner}/${name}+type:issue+label:bug+is:closed+closed:>${date}&per_page=100`;
+  const base = `repo:${owner}/${name}+type:pr+is:merged+merged:>${date}`;
+  const [totalRes, revertRes, hotfixRes, rollbackRes] = await Promise.all([
+    ghFetch(`/search/issues?q=${base}&per_page=1`),
+    ghFetch(`/search/issues?q=${base}+revert+in:title&per_page=1`),
+    ghFetch(`/search/issues?q=${base}+hotfix+in:title&per_page=1`),
+    ghFetch(`/search/issues?q=${base}+rollback+in:title&per_page=1`),
+  ]);
+  if (!totalRes.ok) return [0, 0];
+  const [total, rev, hot, roll] = await Promise.all([
+    totalRes.json(),
+    revertRes.ok ? revertRes.json() : Promise.resolve({ total_count: 0 }),
+    hotfixRes.ok ? hotfixRes.json() : Promise.resolve({ total_count: 0 }),
+    rollbackRes.ok ? rollbackRes.json() : Promise.resolve({ total_count: 0 }),
+  ]);
+  // Sums across three keywords — rare overlap (PR titled both "revert" and "hotfix") is negligible
+  const failures = (rev.total_count ?? 0) + (hot.total_count ?? 0) + (roll.total_count ?? 0);
+  return [total.total_count ?? 0, failures];
+}
+
+// Returns [recent4wTotal, prior8wTotal] as exact counts for velocity comparison.
+// Uses two cumulative queries and subtracts to avoid the `merged:<date` URL encoding
+// issue where GitHub Search misparses the `<` operator in query strings.
+async function fetchVelocityCounts(owner: string, name: string): Promise<[number, number]> {
+  const w4ago = since(28);
+  const w12ago = since(84);
+  const base = `repo:${owner}/${name}+type:pr+is:merged`;
+  const [recentRes, total12wRes] = await Promise.all([
+    ghFetch(`/search/issues?q=${base}+merged:>${w4ago}&per_page=1`),
+    ghFetch(`/search/issues?q=${base}+merged:>${w12ago}&per_page=1`),
+  ]);
+  if (!recentRes.ok || !total12wRes.ok) return [0, 0];
+  const [recent, total12w] = await Promise.all([recentRes.json(), total12wRes.json()]);
+  const recent4w = recent.total_count ?? 0;
+  const prior8w = Math.max(0, (total12w.total_count ?? 0) - recent4w);
+  return [recent4w, prior8w];
+}
+
+async function fetchBugIssues(owner: string, name: string): Promise<GHSearchItem[]> {
+  // Query bugs *created* in the window that are now closed — avoids ancient bugs being
+  // triaged recently inflating MTTR (e.g. a 2020 issue closed last week = 1800d MTTR).
+  const date = since(90);
+  const url = `/search/issues?q=repo:${owner}/${name}+type:issue+label:bug+is:closed+created:>${date}&per_page=100`;
   const res = await ghFetch(url);
   if (!res.ok) return [];
   const data = await res.json();
@@ -176,15 +221,12 @@ function computeLeadTime(prs: GHSearchItem[]): MetricValue {
   return { value: Math.round(med), formatted, tier, sparkline: [], empty: false };
 }
 
-function computeChangeFailureRate(prs: GHSearchItem[]): MetricValue {
-  if (prs.length === 0) {
+function computeChangeFailureRate(totalPRs: number, failurePRs: number): MetricValue {
+  if (totalPRs === 0) {
     return { value: 0, formatted: '0%', tier: 'Elite', sparkline: [], empty: true };
   }
 
-  const failPattern = /\b(revert|hotfix|rollback)\b/i;
-  const failures = prs.filter((pr) => failPattern.test(pr.title));
-  const rate = (failures.length / prs.length) * 100;
-
+  const rate = (failurePRs / totalPRs) * 100;
   // Elite <16%, High <31%, Medium <46%, Low >=46%
   const tier = tierLower(rate, 16, 31, 46);
 
@@ -223,13 +265,17 @@ function computeMTTR(issues: GHSearchItem[]): MetricValue {
   };
 }
 
-function computeVelocity(prs: GHSearchItem[]): VelocityData {
+function computeVelocity(
+  prs: GHSearchItem[],
+  recent4wTotal: number,
+  prior8wTotal: number,
+): VelocityData {
   const mergedAt = (pr: GHSearchItem): string | null =>
     pr.pull_request?.merged_at ?? pr.merged_at ?? null;
 
+  // Weekly sparkline from sample — indicative shape, not exact counts for high-volume repos
   const weeks = lastNWeeks(12);
   const weekCounts = new Map<string, number>(weeks.map((w) => [w, 0]));
-
   prs.forEach((pr) => {
     const ma = mergedAt(pr);
     if (ma) {
@@ -237,18 +283,14 @@ function computeVelocity(prs: GHSearchItem[]): VelocityData {
       if (weekCounts.has(w)) weekCounts.set(w, (weekCounts.get(w) ?? 0) + 1);
     }
   });
-
   const weeklyData: WeeklyCount[] = weeks.map((w) => ({
     week: w,
     count: weekCounts.get(w) ?? 0,
   }));
-  const counts = weeklyData.map((d) => d.count);
 
-  const recent4w = counts.slice(-4);
-  const prior8w = counts.slice(0, 8);
-  const recent4wAvg = recent4w.reduce((a, b) => a + b, 0) / 4;
-  const prior8wAvg = prior8w.reduce((a, b) => a + b, 0) / 8;
-
+  // Use exact counts for the trend comparison — avoids sample bias
+  const recent4wAvg = recent4wTotal / 4;
+  const prior8wAvg = prior8wTotal / 8;
   const percentChange =
     prior8wAvg === 0
       ? recent4wAvg > 0 ? 100 : 0
@@ -266,8 +308,8 @@ function computeVelocity(prs: GHSearchItem[]): VelocityData {
     prior8wAvg: Math.round(prior8wAvg * 10) / 10,
     percentChange: Math.round(percentChange * 10) / 10,
     tier,
-    sparkline: counts,
-    empty: prs.length === 0,
+    sparkline: weeklyData.map((d) => d.count),
+    empty: recent4wTotal === 0 && prior8wTotal === 0,
   };
 }
 
@@ -304,11 +346,13 @@ export async function fetchAllMetrics(
   owner: string,
   name: string,
 ): Promise<MetricsData> {
-  const [repoInfo, releases, mergedPRs, bugIssues] = await Promise.all([
+  const [repoInfo, releases, mergedPRs, bugIssues, cfrCounts, velocityCounts] = await Promise.all([
     fetchRepoInfo(owner, name),
     fetchReleases(owner, name),
     fetchMergedPRs(owner, name),
     fetchBugIssues(owner, name),
+    fetchCFRCounts(owner, name),
+    fetchVelocityCounts(owner, name),
   ]);
 
   let tagCount = 0;
@@ -318,9 +362,9 @@ export async function fetchAllMetrics(
 
   const deploymentFrequency = computeDeploymentFrequency(releases, tagCount);
   const leadTime = computeLeadTime(mergedPRs);
-  const changeFailureRate = computeChangeFailureRate(mergedPRs);
+  const changeFailureRate = computeChangeFailureRate(cfrCounts[0], cfrCounts[1]);
   const meanTimeToRestore = computeMTTR(bugIssues);
-  const velocityTrend = computeVelocity(mergedPRs);
+  const velocityTrend = computeVelocity(mergedPRs, velocityCounts[0], velocityCounts[1]);
   const overallHealth = computeOverallHealth(
     deploymentFrequency,
     leadTime,
