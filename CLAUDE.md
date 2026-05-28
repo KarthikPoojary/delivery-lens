@@ -5,13 +5,15 @@
 A single-page TPM tool that shows DORA-aligned engineering health metrics for any public GitHub repository.
 
 ## Current status
-- **Works:** App running at http://localhost:3000. All 5 metrics live and verified against real GitHub data. TypeScript clean. README written. GitHub repo live.
-- **Verified metric values (as of 2026-05-27):**
-  - vercel/next.js → Deploy Elite, Lead Time Elite, CFR Elite, MTTR N/A (no "bug" label), Velocity Low (-30%)
-  - supabase/supabase → Deploy Medium, Lead Time Elite, CFR Elite, MTTR ~1.1d High, Velocity Elite (+12%)
+- **Deployed:** https://delivery-lens.vercel.app (Vercel production, 2026-05-28)
+- **GitHub repo:** https://github.com/KarthikPoojary/delivery-lens
+- **Works:** GitHub tab (5 DORA + 3 Process Health metrics) and Gerrit tab (Chromium, Fuchsia, Dart presets). TypeScript clean. Nav bar, overflow/tooltip fixes applied.
+- **Verified metric values (GitHub presets, as of 2026-05-27):**
   - kubernetes/kubernetes → Deploy High, Lead Time High, CFR Elite, MTTR N/A (uses kind/bug), Velocity Elite (+12%)
-- **Partially built:** README has placeholder for screenshot (needs deployment first).
-- **Last worked on:** Metric accuracy fixes + README + file cleanup (2026-05-27).
+  - grpc/grpc → active, good demo values
+  - istio/istio → Deploy High, 13 releases, CFR Elite, Velocity Elite (+12%)
+- **Vercel env:** GITHUB_TOKEN set in production via Vercel CLI (not in git, not in GitHub).
+- **Last worked on:** Gerrit page, nav bar, overflow fix, deployment (2026-05-28).
 
 ## Tech stack
 - Next.js 16.2.6 (App Router, TypeScript)
@@ -65,16 +67,17 @@ app/globals.css              — Tailwind v4 CSS + theme variables
 Set in `.env.local` locally. Set in Vercel dashboard for production. No special scopes needed for public repos.
 
 ## Open questions / parked items
-- **MTTR N/A for two repos** — vercel/next.js and kubernetes/kubernetes don't use a "bug" GitHub label (k8s uses `kind/bug`). MTTR shows "No data" for them. Honest, but could add multi-label support later.
-- **Lead Time is a sample** — computed from 100 most-recently-merged PRs, not all PRs. For repos with 1000+ PRs/90d this is a representative sample, not exact median. Acceptable for v1.
-- **Velocity chart sparkline vs exact counts** — sparkline uses sampled PRs (indicative shape), while 4w/8w comparison uses exact API counts. Slight inconsistency; fine for v1.
-- **LinkedIn URL** — hardcoded as `linkedin.com/in/karthikpoojary` in footer. Verify before deploying.
-- **Screenshot in README** — placeholder until deployment is done.
+- **MTTR N/A for k8s** — kubernetes uses `kind/bug` label, not `bug`. MTTR shows N/A. Honest for v1; could add multi-label support.
+- **Lead Time is a sample** — computed from 100 most-recently-merged PRs, not all. Representative sample for high-volume repos. Acceptable for v1.
+- **Velocity chart sparkline vs exact counts** — sparkline uses sampled PRs (indicative shape), 4w/8w comparison uses exact API counts. Fine for v1.
+- **LinkedIn URL** — hardcoded as `linkedin.com/in/karthikpoojary` in footer. Verify this is the correct slug.
+- **Gerrit review response time** — returns N/A because public Gerrit REST API doesn't expose reviewer timeline without auth. Could add OAuth Gerrit auth later.
+- **Vercel preview env GITHUB_TOKEN** — only set in production; preview deploys use unauthenticated GitHub API (60 req/hr). Fine for now.
 
 ## Next steps
-1. Deploy to Vercel — set `GITHUB_TOKEN` env var in dashboard
-2. Add screenshot to README after deployment and push
-3. Verify LinkedIn URL in footer is correct
+- Verify LinkedIn URL slug is correct
+- Add a screenshot to README once a good viewport capture is taken
+- Consider adding GitHub Actions deployment data for more accurate Deploy Frequency
 
 ## Session log
 

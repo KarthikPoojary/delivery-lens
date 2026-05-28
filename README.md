@@ -1,8 +1,8 @@
 # Delivery Lens
 
-**A DORA-aligned engineering health dashboard for any public GitHub repository.**
+**A DORA-aligned engineering health dashboard for GitHub and Gerrit projects.**
 
-Live demo: https://delivery-lens.vercel.app
+**Live demo: https://delivery-lens.vercel.app**
 
 ---
 
@@ -10,89 +10,110 @@ Live demo: https://delivery-lens.vercel.app
 
 Technical Program Managers are accountable for more than shipping on time — they are expected to *develop, build, and evolve metrics with reliable supporting datasets* that help engineering leaders make decisions with confidence. In practice, that means knowing whether a team is accelerating or accumulating risk, and being able to explain the difference to a VP or a peer who doesn't live in the codebase.
 
-Delivery Lens was built to answer one question quickly: **is this engineering team healthy right now, and where is the friction?** It pulls live data from the GitHub REST API and presents five DORA-aligned metrics — the same framework Google's DevOps Research and Assessment team uses to benchmark software delivery performance — in a single view that a TPM, engineering director, or skip-level can read in under a minute.
+Delivery Lens answers one question quickly: **is this engineering team healthy right now, and where is the friction?** It pulls live data from the GitHub REST API or any public Gerrit instance and presents DORA-aligned metrics — the same framework Google's DevOps Research and Assessment team uses to benchmark software delivery performance — in a single view that a TPM, engineering director, or skip-level can read in under a minute.
 
 This is a portfolio project demonstrating applied TPM skills: metric selection and definition, data pipeline design, and the ability to translate raw developer activity into actionable signals.
 
 ---
 
-## Screenshot
+## Features
 
-*Screenshot will be added after production deployment.*
+- **Two source types:** GitHub repositories and Gerrit code review systems (googlesource.com)
+- **DORA metrics:** Deployment Frequency, Lead Time for Changes, Change Failure Rate, Mean Time to Restore, Velocity Trend
+- **Process Health metrics:** Review Response Time, Open Bug Backlog, Active Contributors
+- **Performance tiers:** Elite / High / Medium / Low with DORA benchmark context on every metric
+- **Velocity chart:** 12-week merged PR/CL sparkline with trend comparison
+- **Preset repos:** Google-stack presets on both tabs for instant demo
+- **Custom input:** Any public `owner/repo` (GitHub) or `instance/project` (Gerrit)
+- **No database:** Live data from APIs, 1-hour server-side cache via Next.js fetch
 
 ---
 
-## The five metrics
+## Preset repositories
 
-Each metric is computed from the last 90 days of public GitHub activity and assigned a performance tier: **Elite**, **High**, **Medium**, or **Low**.
+### GitHub tab
+| Repo | Context |
+|------|---------|
+| `kubernetes/kubernetes` | GKE · Container orchestration — high volume, enterprise-grade process |
+| `grpc/grpc` | gRPC · Underpins all GCP APIs — polyglot, disciplined release cadence |
+| `istio/istio` | Anthos · Service mesh — active contributor base, frequent point releases |
 
-### 1. Deployment Frequency
-**What it measures:** How many releases or tags the repository has published in the last 90 days.
+### Gerrit tab
+| Project | Context |
+|---------|---------|
+| `chromium-review / chromium/src` | Google Chrome — one of the largest and most active Gerrit monorepos |
+| `fuchsia-review / fuchsia` | Google Fuchsia OS — modern microkernel, strict review SLAs |
+| `dart-review / sdk` | Dart SDK · Flutter — high CL velocity, strong revert discipline |
 
-**Why it matters to a TPM:** Deployment frequency is the single best leading indicator of team agility. Teams that ship frequently get faster feedback, take smaller risks per release, and recover from mistakes sooner. A Low score here almost always precedes problems with the other four metrics. If you are planning a roadmap and the team ships twice a quarter, plan accordingly.
+---
+
+## The metrics
+
+### DORA — Delivery Performance
+
+Each metric covers the last 90 days and is assigned a tier: **Elite**, **High**, **Medium**, or **Low**.
+
+#### 1. Deployment Frequency
+How many releases or tags shipped in the last 90 days. The single best leading indicator of team agility — teams that ship frequently take smaller risks per release and recover from mistakes faster.
 
 | Tier | Threshold |
 |------|-----------|
 | Elite | 30+ releases |
-| High | 10–29 releases |
-| Medium | 2–9 releases |
-| Low | Fewer than 2 releases |
+| High | 10–29 |
+| Medium | 2–9 |
+| Low | < 2 |
 
----
-
-### 2. Lead Time for Changes
-**What it measures:** Median time from pull request creation to merge, for all merged PRs in the last 90 days.
-
-**Why it matters to a TPM:** Lead time is a proxy for review process health. Long lead times mean code is sitting in queues — waiting for reviewers, blocked on CI, or caught in long feedback loops. It also limits how quickly the team can respond to an incident or a priority change. A High or Elite score here means the team has healthy review norms and fast CI.
+#### 2. Lead Time for Changes
+Median time from PR/CL creation to merge. Long lead time means code is sitting in queues — waiting for reviewers, blocked on CI, or caught in long feedback loops.
 
 | Tier | Threshold |
 |------|-----------|
-| Elite | Under 24 hours |
-| High | Under 1 week (168h) |
-| Medium | Under 1 month (720h) |
-| Low | Over 1 month |
+| Elite | < 24 hours |
+| High | < 1 week |
+| Medium | < 1 month |
+| Low | > 1 month |
 
----
-
-### 3. Change Failure Rate
-**What it measures:** Percentage of merged PRs whose title contains "revert", "hotfix", or "rollback" — a signal that a previous change caused a production problem.
-
-**Why it matters to a TPM:** CFR directly reflects quality and testing practices. A rising CFR means the team is shipping faster than their safety net can catch problems. It also has downstream cost: every hotfix consumes capacity that was not in the roadmap. As a TPM, a High CFR is a conversation to have about test coverage, staging environments, and release gating.
+#### 3. Change Failure Rate
+Percentage of merged changes that were reverts or hotfixes — a signal that a previous change caused a production problem. Rising CFR is a conversation about test coverage, staging environments, and release gating.
 
 | Tier | Threshold |
 |------|-----------|
 | Elite | 0–15% |
 | High | 16–30% |
 | Medium | 31–45% |
-| Low | Over 45% |
+| Low | > 45% |
 
----
-
-### 4. Mean Time to Restore
-**What it measures:** Median time from a GitHub issue labeled "bug" being opened to being closed, for issues resolved in the last 90 days.
-
-**Why it matters to a TPM:** MTTR is a measure of incident response capability. It reflects on-call process maturity, observability tooling, and how well the team understands their own system. Long MTTR means users are experiencing degraded service for longer, and teams are spending unplanned capacity on firefighting. Short MTTR means the team can detect, diagnose, and ship a fix quickly.
+#### 4. Mean Time to Restore *(GitHub only)*
+Median time from a "bug" issue being opened to closed. Reflects incident response capability, observability tooling, and system understanding. Shown as N/A for Gerrit (bug tracking is external).
 
 | Tier | Threshold |
 |------|-----------|
-| Elite | Under 1 day |
-| High | Under 1 week |
-| Medium | Under 1 month |
-| Low | Over 1 month |
+| Elite | < 1 day |
+| High | < 1 week |
+| Medium | < 1 month |
+| Low | > 1 month |
 
----
-
-### 5. Velocity Trend
-**What it measures:** Merged PRs per week over the last 12 weeks, compared as recent 4-week average vs prior 8-week average.
-
-**Why it matters to a TPM:** An absolute velocity number is hard to interpret without context. Velocity trend tells you the direction: is the team accelerating, holding steady, or slowing down? Sustained decline often signals growing tech debt, team attrition, or scope creep. A spike can mean a sprint push — useful to know before planning the next quarter. This metric is the one to watch when a team has just undergone a reorganisation or started a new programme.
+#### 5. Velocity Trend
+Merged PRs/CLs per week: recent 4-week average vs prior 8-week average. Surfaces directional change — a team can score High on the DORA four while quietly slowing down.
 
 | Tier | Threshold |
 |------|-----------|
-| Elite | More than +10% vs prior period |
+| Elite | > +10% vs prior period |
 | High | -5% to +10% (stable) |
 | Medium | -20% to -5% (mild decline) |
-| Low | More than -20% decline |
+| Low | > -20% decline |
+
+---
+
+### Process Health — Flow Efficiency
+
+A second layer of signals that a Google-scale TPM uses to identify upstream bottlenecks before they show up in DORA numbers.
+
+| Metric | What it measures | Why it matters |
+|--------|-----------------|----------------|
+| **Review Response Time** | Median hours from PR creation to first review event (sampled from 20 recent PRs) | Engineers blocked on review is the leading cause of high Lead Time |
+| **Open Bug Backlog** | Total open issues currently labeled "bug" | A growing backlog signals defects accumulating faster than the team can address them |
+| **Active Contributors** | Unique PR/CL authors in the last 90 days | Proxy for bus factor and knowledge distribution risk |
 
 ---
 
@@ -103,9 +124,9 @@ Each metric is computed from the last 90 days of public GitHub activity and assi
 | Framework | Next.js 16 (App Router, TypeScript) |
 | Styling | Tailwind CSS v4 |
 | Charts | Recharts |
-| Data | GitHub REST API (live, no database) |
-| Auth | GitHub Personal Access Token (server-side only) |
-| Hosting | Vercel (Hobby tier) |
+| Data sources | GitHub REST API, Gerrit REST API |
+| Auth | GitHub PAT (server-side only, never in client bundle) |
+| Hosting | Vercel |
 | Caching | Next.js fetch cache, 1-hour revalidation |
 
 ---
@@ -119,62 +140,48 @@ git clone https://github.com/KarthikPoojary/delivery-lens
 cd delivery-lens
 npm install
 cp .env.local.example .env.local
-# Edit .env.local and add your GITHUB_TOKEN
+# Edit .env.local and set GITHUB_TOKEN
 npm run dev
 ```
 
-Open http://localhost:3000. Click a preset repo or enter any `owner/repo` in the input.
+Open http://localhost:3000.
 
-**Creating a GitHub token:**
-Go to https://github.com/settings/tokens, create a classic token with no special scopes (public repository access requires none). Without a token the app falls back to 60 unauthenticated requests per hour, which exhausts quickly during development.
+**Creating a GitHub token:** Go to https://github.com/settings/tokens, create a classic token. No special scopes needed for public repos. Without a token the app uses 60 unauthenticated requests/hour — fine for light use, exhausts quickly in development.
 
 ---
 
 ## Design decisions
 
 **Why DORA?**
-The DORA framework (from Google's DevOps Research and Assessment programme) is the most widely validated model for measuring software delivery performance. It is the same framework used internally at Google and cited in the *Accelerate* book. Framing metrics around an established model means results are comparable across teams and organisations, not just internally meaningful.
+The DORA framework is the most widely validated model for measuring software delivery performance. It is the same framework used internally at Google and cited in *Accelerate*. Framing metrics around an established model means results are comparable across teams and organisations.
 
-**Why these five metrics specifically?**
-The first four (Deployment Frequency, Lead Time, Change Failure Rate, Mean Time to Restore) are the canonical DORA four. Velocity Trend was added as a fifth signal because it surfaces directional change — a team can score High on the other four while quietly slowing down, which DORA alone won't catch.
+**Why Gerrit in addition to GitHub?**
+Google engineers primarily work in Gerrit (Chromium, Fuchsia, Android, internal monorepo). A tool focused on Google-scale delivery should speak the language of Gerrit CLs, not just GitHub PRs. The Gerrit REST API is public for open-source googlesource.com instances.
 
-**Why a 90-day window?**
-Short enough to be current; long enough to smooth out sprint-cycle noise and one-off events. A single week of low activity (a holiday, an all-hands) should not mislead.
+**Why the Process Health layer?**
+The DORA four are lagging indicators — by the time Lead Time or CFR degrades, the problem has been building for weeks. Review Response Time and Bug Backlog are leading indicators: they tell you the upstream conditions that will produce DORA problems if left unaddressed. A Google TPM thinking about programme risk looks at both layers.
 
 **Why server-side GitHub authentication?**
-The GitHub token never leaves the server. The API route does not exist — `lib/github.ts` is called directly from an async Server Component, which means the token is only ever read in the Next.js Node.js runtime on the server, not bundled into client JavaScript.
+The GitHub token never leaves the server. There is no API route — `lib/github.ts` is called directly from an async Server Component. The token is only read in the Next.js Node.js runtime, never bundled into client JavaScript.
 
 **Why no database?**
-The entire value of this tool comes from live data. A database would add latency, maintenance overhead, and data freshness risk. Next.js fetch-level caching (1-hour `revalidate`) provides the right tradeoff: fast repeated loads without stale data risk.
+Live data is the entire value of this tool. A database adds latency, maintenance overhead, and data freshness risk. Next.js fetch-level caching (1-hour `revalidate`) provides the right tradeoff: fast repeated loads without stale data.
 
----
-
-## Preset repositories
-
-The three built-in presets were chosen to demonstrate the tool across different organisational scales and activity levels:
-
-| Repo | Why it's a good demo |
-|------|---------------------|
-| `vercel/next.js` | High-velocity open source project, many contributors, frequent releases |
-| `supabase/supabase` | Fast-growing product, mix of feature work and bug fixing |
-| `kubernetes/kubernetes` | Extremely high volume, enterprise-grade processes, interesting CFR and MTTR patterns |
-
-The app also accepts any public GitHub repository via the custom input.
+**Why a 90-day window?**
+Short enough to be current; long enough to smooth sprint-cycle noise and one-off events. A single week of low activity (a holiday, an all-hands) should not mislead.
 
 ---
 
 ## Roadmap
 
-- Add a screenshot and live demo link once deployed
-- Export metric snapshot as a shareable image (for slide decks)
+- Export metric snapshot as a shareable image (for slide decks and QBRs)
 - Side-by-side repo comparison view
-- Historical trend view (how has this repo's health changed over 6 months?)
-- Support for GitLab and Bitbucket repositories
+- Historical trend: how has this repo's health changed over 6 months?
+- Connect GitHub Actions workflow data for more accurate Deployment Frequency
+- Support GitLab repositories
 
 ---
 
 ## About
 
-Built by [Karthik Poojary](https://github.com/KarthikPoojary) as part of a portfolio of TPM-focused engineering tools.
-
-This project is one of three portfolio pieces demonstrating applied technical programme management skills: metric definition, data system design, and the ability to surface engineering signals for non-technical stakeholders.
+Built by [Karthik Poojary](https://github.com/KarthikPoojary) as a portfolio project demonstrating applied technical programme management skills: metric definition, data system design, and the ability to surface engineering signals for leadership.
